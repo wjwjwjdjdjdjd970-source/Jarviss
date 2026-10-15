@@ -719,7 +719,7 @@ async function ask(raw){
   var el=add("bot","…");
   try{
     var out=await answerChain(c,t,el);
-    renderInto(el,out);commit(c,t,out);speak(out);
+    renderInto(el,out);commit(c,t,out);speak(out);offerFact(t);
   }catch(e){
     var hit=cacheFind(t);
     if(hit){var txt="Yapay zekâ şu an yanıt veremiyor. Benzer kayıtlı cevap ("+hit.d+"):\n"+hit.a;renderInto(el,txt);commit(c,t,txt);speak(txt)}
@@ -816,7 +816,9 @@ async function answerChain(c,t,el){
 /* Kayıtlı cevaplar: son 300 cevap telefonda tutulur, tüm sağlayıcılar kapalıysa benzer soruya bakılır */
 function cacheAdd(q,a){
   S.cache=S.cache||[];
-  S.cache.unshift({q:norm(q),a:String(a).slice(0,2000),ts:Date.now()});
+  var nq=norm(q),now=Date.now();
+  S.cache=S.cache.filter(function(x){return x.q!==nq&&now-x.ts<60*864e5});
+  S.cache.unshift({q:nq,a:String(a).slice(0,2000),ts:now});
   if(S.cache.length>300)S.cache.length=300;
   save();
 }
@@ -1271,6 +1273,7 @@ async function actionCmd(t,c){
   if(pendingAct){
     var p=pendingAct;pendingAct=null;
     if(/^(evet|tamam|aç|olur|onaylıyorum)$/.test(n)){
+      if(p.kind==="fact"){S.facts=S.facts||[];if(S.facts.indexOf(p.text)>-1)return reply("Bu bilgi zaten kayıtlı.");S.facts.push(p.text);if(S.facts.length>50)S.facts.shift();save();return reply("Hafızaya kaydettim.")}
       if(p.kind==="tel"){reply("Arama başlatılıyor.");location.href="tel:"+p.num;return true}
       window.open(p.url,"_blank","noopener");return reply("Açıldı.");
     }
@@ -1282,6 +1285,14 @@ async function actionCmd(t,c){
   var a=parseAct(t);
   if(!a)return false;
   pendingAct=a;return reply(a.ask);
+}
+
+/* Öğrenen hafıza: kişisel bir cümle gelirse kaydetmeyi önerir, onay olmadan kaydetmez */
+function factCand(t){var m=(t||"").trim();return m.length>=8&&m.length<=200&&/^(benim |adım |ismim |sınavım |sınav tarihim |dersim )/i.test(m)}
+function offerFact(t){
+  if(!factCand(t))return;
+  var s=t.trim();pendingAct={kind:"fact",text:s};
+  add("bot","Bunu hafızaya kaydedeyim mi: \""+s+"\" (evet / hayır)");
 }
 
 </script>
