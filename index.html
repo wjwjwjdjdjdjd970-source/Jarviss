@@ -400,7 +400,7 @@ var LBL={idle:"hazır",listen:"dinliyorum…",think:"düşünüyor…",speak:"ko
 var PN={claude:"Claude",gemini:"Gemini",anthropic:"Anthropic",openai:"OpenAI",offline:"çevrimdışı"};
 PRESETS.forEach(function(p){PN[p[0]]=p[1]});
 
-try{var raw=localStorage.getItem(KEY);if(raw){var o=JSON.parse(raw);if(o&&o.chats){S.chats=o.chats;S.cur=o.cur;S.facts=o.facts||[];S.notes=o.notes||[];S.todos=o.todos||[];S.cards=o.cards||[];for(var k in o.set)S.set[k]=o.set[k]}}}catch(e){}
+try{var raw=localStorage.getItem(KEY);if(raw){var o=JSON.parse(raw);if(o&&o.chats){S.chats=o.chats;S.cur=o.cur;S.facts=o.facts||[];S.notes=o.notes||[];S.todos=o.todos||[];S.cards=o.cards||[];S.cache=o.cache||[];for(var k in o.set)S.set[k]=o.set[k]}}}catch(e){}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){if(!warned){warned=true;note("Kayıt yapılamıyor: tarayıcı depolaması kapalı.")}}}
 function newChat(){var c={id:"c"+Date.now(),title:"Yeni sohbet",ts:Date.now(),msgs:[]};S.chats.unshift(c);S.cur=c.id;save();return c}
 function chat(){for(var i=0;i<S.chats.length;i++)if(S.chats[i].id===S.cur)return S.chats[i];return newChat()}
@@ -717,9 +717,13 @@ async function ask(raw){
   busy=true;setState("think");
   var el=add("bot","…");
   try{
-    var out=((await callAI(p,c.msgs.slice(-16),t,function(o){renderInto(el,o.text);scroll()}))||"").trim()||"Yanıt alamadım efendim, tekrar dener misiniz?";
+    var out=await answerChain(c,t,el);
     renderInto(el,out);commit(c,t,out);speak(out);
-  }catch(e){renderInto(el,errMsg(e))}
+  }catch(e){
+    var hit=cacheFind(t);
+    if(hit){var txt="Yapay zekâ şu an yanıt veremiyor. Benzer kayıtlı cevap ("+hit.d+"):\n"+hit.a;renderInto(el,txt);commit(c,t,txt);speak(txt)}
+    else renderInto(el,errMsg(e));
+  }
   busy=false;if(state==="think")setState("idle");
 }
 
@@ -788,6 +792,43 @@ async function callVision(p,q,imgs){
   var base=(S.set.b[p]||presetOf(p)[2]||"").replace(/\/+$/,"");if(!base)throw {code:"nobase"};
   d=await postJson(base+"/chat/completions",{"content-type":"application/json","authorization":"Bearer "+key},{model:model,messages:[{role:"system",content:sys},{role:"user",content:imgs.map(function(b){return {type:"image_url",image_url:{url:"data:image/jpeg;base64,"+b}}}).concat([{type:"text",text:q}])}]});
   return (d.choices&&d.choices[0]&&d.choices[0].message.content)||"";
+}
+
+/* Yedek zinciri: seçili sağlayıcı başarısızsa anahtarı olan diğerlerini sırayla dener */
+function chainList(p){
+  var l=[p],ks=S.set.k||{};
+  Object.keys(ks).forEach(function(x){if(x!==p&&x!=="claude"&&x!=="offline"&&String(ks[x]||"").trim())l.push(x)});
+  return l;
+}
+async function answerChain(c,t,el){
+  var list=chainList(prov()),last=null;
+  for(var i=0;i<list.length;i++){
+    var p=list[i];
+    try{
+      var out=((await callAI(p,c.msgs.slice(-16),t,function(o){renderInto(el,o.text);scroll()}))||"").trim()||"Yanıt alamadım efendim, tekrar dener misiniz?";
+      cacheAdd(t,out);
+      return i>0?"("+PN[p]+" yedek olarak yanıtladı)\n"+out:out;
+    }catch(e){last=e}
+  }
+  throw last||{code:"nokey"};
+}
+/* Kayıtlı cevaplar: son 300 cevap telefonda tutulur, tüm sağlayıcılar kapalıysa benzer soruya bakılır */
+function cacheAdd(q,a){
+  S.cache=S.cache||[];
+  S.cache.unshift({q:norm(q),a:String(a).slice(0,2000),ts:Date.now()});
+  if(S.cache.length>300)S.cache.length=300;
+  save();
+}
+function cacheFind(q){
+  var w=norm(q).replace(/[^a-zçğıöşü0-9 ]/g," ").split(/\s+/).filter(function(x){return x.length>=3});
+  if(!w.length||!S.cache)return null;
+  var best=null,bs=0;
+  S.cache.forEach(function(x){
+    var s=0;w.forEach(function(k){if(x.q.indexOf(k)>-1)s++});
+    var r=s/w.length;
+    if(s>0&&r>=0.6&&s>bs){bs=s;best=x}
+  });
+  return best?{a:best.a,d:new Date(best.ts).toLocaleDateString("tr-TR")}:null;
 }
 
 </script>
@@ -1022,7 +1063,7 @@ function openSheet(){
   sh.innerHTML='<div class="sheet" role="dialog" aria-label="Komuta merkezi"><div class="shh"><span>Komuta merkezi</span><button class="sb" id="shx" aria-label="Kapat">'+ic("x")+'</button></div>'+
   '<div class="big">'+dialSvg()+'</div><div class="bigst" id="bst2"></div>'+
   '<button class="btn pri" id="vm"></button><div class="sm" id="vmh"></div>'+
-  '<div class="qa"><button class="btn" id="q1">Zamanlayıcı kur</button><button class="btn" id="q2">Bir şey hatırlat</button><button class="btn" id="q5">Not al</button><button class="btn" id="q6">Yapılacak ekle</button><button class="btn" id="q7">Defteri aç</button><button class="btn" id="q8">Kaynaklar</button><button class="btn" id="q4">Yeni sohbet</button><button class="btn" id="q3">Konuşmayı sustur</button></div>'+
+  '<div class="qa"><button class="btn" id="q1">Zamanlayıcı kur</button><button class="btn" id="q2">Bir şey hatırlat</button><button class="btn" id="q5">Not al</button><button class="btn" id="q6">Yapılacak ekle</button><button class="btn" id="q7">Defteri aç</button><button class="btn" id="q8">Kaynaklar</button><button class="btn" id="q9">Hafızam</button><button class="btn" id="q10">Sohbetlerde ara</button><button class="btn" id="q4">Yeni sohbet</button><button class="btn" id="q3">Konuşmayı sustur</button></div>'+
   '<div class="kv"><div><small>tarih</small><span id="k1"></span></div><div><small>kaynak</small><span id="k2"></span></div><div><small>hafıza kaydı</small><span id="k3"></span></div><div><small>bugünkü komut</small><span id="k4"></span></div><div><small>açık yapılacak</small><span id="k5"></span></div><div><small>not</small><span id="k6"></span></div></div></div>';
   $("bst2").textContent=LBL[state];
   $("k1").textContent=new Date().toLocaleDateString("tr-TR",{weekday:"long",day:"numeric",month:"long"});
@@ -1037,6 +1078,8 @@ function openSheet(){
   $("q6").onclick=function(){pre("Yapılacak: ")};
   $("q7").onclick=function(){closeSheet();listPanel()};
   $("q8").onclick=function(){closeSheet();sourcesPanel()};
+  $("q9").onclick=function(){closeSheet();memoryPanel()};
+  $("q10").onclick=function(){closeSheet();chatSearchPanel()};
   $("q3").onclick=function(){if(window.speechSynthesis)speechSynthesis.cancel();closeSheet()};
   $("q4").onclick=function(){newChat();loadChat();closeSheet()};
   $("shx").onclick=closeSheet;
@@ -1152,6 +1195,53 @@ function sourcesPanel(){
   });
 }
 function initSources(){dbAll().then(function(a){SRCS=a;if(document.getElementById("home"))loadChat()}).catch(function(){})}
+
+</script>
+<script>
+/* Hafızam (kalıcı bilgiler: listele, düzenle, sil) ve Sohbetlerde ara */
+function memoryPanel(){
+  var b=pnHead("Hafızam");
+  b.appendChild(mk("div","sm","Jarvis'in sizin hakkınızda sakladığı bilgiler. Düzenleyebilir veya silebilirsiniz. 'Hatırla: ...' yazarak yeni ekleyebilirsiniz."));
+  var add=mk("input","in");add.type="text";add.placeholder="Yeni bilgi";b.appendChild(add);
+  var ab=mk("button","btn pri","Ekle");b.appendChild(ab);
+  function addNow(){var v=add.value.trim();if(!v)return;S.facts.push(v);if(S.facts.length>50)S.facts.shift();save();memoryPanel()}
+  ab.onclick=addNow;add.addEventListener("keydown",function(e){if(e.key==="Enter"){e.preventDefault();addNow()}});
+  if(!S.facts.length)b.appendChild(mk("div","sm","Henüz kayıtlı bilgi yok."));
+  S.facts.forEach(function(f,i){
+    var r=mk("div","li"),tx=mk("span","tx",f),ed=mk("button","sb");ed.setAttribute("aria-label","Düzenle");ed.innerHTML=ic("set");
+    var d=mk("button","sb");d.setAttribute("aria-label","Sil");d.innerHTML=ic("trash");
+    ed.onclick=function(){
+      var inp=mk("input","in");inp.type="text";inp.value=f;r.innerHTML="";r.appendChild(inp);
+      var ok2=mk("button","btn pri","Kaydet");r.appendChild(ok2);
+      function save2(){var v=inp.value.trim();if(v){S.facts[i]=v;save()}memoryPanel()}
+      ok2.onclick=save2;inp.addEventListener("keydown",function(e){if(e.key==="Enter"){e.preventDefault();save2()}});
+    };
+    d.onclick=function(){S.facts.splice(i,1);save();memoryPanel()};
+    r.appendChild(tx);r.appendChild(ed);r.appendChild(d);b.appendChild(r);
+  });
+}
+function chatSearchPanel(){
+  var b=pnHead("Sohbetlerde ara");
+  var q=mk("input","in");q.type="text";q.placeholder="Aranacak kelime";b.appendChild(q);
+  var out=mk("div","res");b.appendChild(out);
+  function run(){
+    var v=q.value.trim().toLocaleLowerCase("tr-TR");out.innerHTML="";
+    if(v.length<2){out.appendChild(mk("div","sm","En az 2 harf yazın."));return}
+    var n=0;
+    S.chats.forEach(function(c){
+      c.msgs.forEach(function(m){
+        var lt=m.t.toLocaleLowerCase("tr-TR"),ix=lt.indexOf(v);
+        if(ix<0||n>=40)return;n++;
+        var bt=mk("button","btn",(c.title||"Sohbet")+" · "+new Date(m.ts).toLocaleDateString("tr-TR"));
+        var sn=mk("div","sm",(ix>30?"…":"")+m.t.slice(Math.max(0,ix-30),ix+v.length+50)+(m.t.length>ix+v.length+50?"…":""));
+        bt.onclick=function(){S.cur=c.id;save();closePn();loadChat()};
+        out.appendChild(bt);out.appendChild(sn);
+      });
+    });
+    if(!n)out.appendChild(mk("div","sm","Eşleşme bulunamadı."));
+  }
+  q.addEventListener("input",run);
+}
 
 </script>
 <script>
