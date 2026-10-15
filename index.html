@@ -710,6 +710,7 @@ async function ask(raw){
   if(window.speechSynthesis)speechSynthesis.cancel();
   var c=chat(),p=prov();
   add("user",t);
+  if(await actionCmd(t,c))return;
   if(await pageCmd(t,c))return;
   var loc=core(t);
   if(loc===null&&p==="offline")loc=chit(norm(t))||offFallback(t);
@@ -1241,6 +1242,46 @@ function chatSearchPanel(){
     if(!n)out.appendChild(mk("div","sm","Eşleşme bulunamadı."));
   }
   q.addEventListener("input",run);
+}
+
+</script>
+<script>
+/* Telefon komutları: arama sonucu açma, harita, kişiye arama, site açma. Her işlem önce onay ister. */
+var pendingAct=null;
+var ENG={youtube:"https://www.youtube.com/results?search_query=",google:"https://www.google.com/search?q=",vikipedi:"https://tr.wikipedia.org/w/index.php?search="};
+function parseAct(raw){
+  var t=(raw||"").trim().replace(/\s+/g," "),m,n=t.toLocaleLowerCase("tr-TR");
+  if((m=t.match(/^(youtube|google|vikipedi)['’]?(?:da|de|ta|te)?\s+(.+?)\s+ara$/i)))
+    return {kind:"url",url:ENG[m[1].toLocaleLowerCase("tr-TR")]+encodeURIComponent(m[2]),ask:m[1]+"'da \""+m[2]+"\" aransın mı? (evet / hayır)"};
+  if((m=t.match(/^haritada\s+(.+?)(?:\s+göster)?$/i))||(m=t.match(/^(.+?)\s+haritada(?:\s+göster)?$/i)))
+    return {kind:"url",url:"https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(m[1]),ask:"\""+m[1]+"\" haritada açılsın mı? (evet / hayır)"};
+  if((m=t.match(/^(?:şu\s+)?(?:siteyi\s+)?aç\s*:?\s*(https?:\/\/\S+)$/i))||(m=t.match(/^aç\s*:?\s*((?:[a-z0-9-]+\.)+[a-z]{2,}\S*)$/i))){
+    var u=/^https?:/i.test(m[1])?m[1]:"https://"+m[1];
+    return {kind:"url",url:u,ask:u+" açılsın mı? (evet / hayır)"};
+  }
+  var best=null;(S.contacts||[]).forEach(function(k){
+    var nm=k.n.toLocaleLowerCase("tr-TR");
+    if(n.indexOf(nm)===0&&/\s*ara$/.test(n)&&(!best||nm.length>best.n.length))best=k;
+  });
+  if(best)return {kind:"tel",num:best.p,ask:best.n+" aransın mı? (evet / hayır)"};
+  return null;
+}
+async function actionCmd(t,c){
+  var n=norm(t),reply=function(x){commit(c,t,x);add("bot",x);speak(x);return true};
+  if(pendingAct){
+    var p=pendingAct;pendingAct=null;
+    if(/^(evet|tamam|aç|olur|onaylıyorum)$/.test(n)){
+      if(p.kind==="tel"){reply("Arama başlatılıyor.");location.href="tel:"+p.num;return true}
+      window.open(p.url,"_blank","noopener");return reply("Açıldı.");
+    }
+    if(/^(hayır|iptal|vazgeç|yok)$/.test(n))return reply("Tamam, iptal ettim.");
+  }
+  var m=t.match(/^kişi ekle\s*:?\s*(.+?)\s*=\s*([+\d][\d\s-]{5,})$/i);
+  if(m){S.contacts=S.contacts||[];S.contacts.push({n:m[1].trim(),p:m[2].replace(/[\s-]/g,"")});save();return reply("Kişi kaydedildi: "+m[1].trim()+".")}
+  if(/^kişilerim$/.test(n)){var L=S.contacts||[];return reply(L.length?"Kişiler:\n"+L.map(function(k){return "- "+k.n}).join("\n"):"Kayıtlı kişi yok. 'Kişi ekle: Ad = numara' yazın.")}
+  var a=parseAct(t);
+  if(!a)return false;
+  pendingAct=a;return reply(a.ask);
 }
 
 </script>
