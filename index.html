@@ -347,6 +347,8 @@ button.gc{cursor:pointer}
 [data-style=k] .hello p{font-size:15px}
 [data-style=k] #bgfx{opacity:.22}
 .qw{opacity:.35}
+
+.brief{margin:6px 14px 0;text-align:center;font-size:12.5px;color:var(--mut);line-height:1.45}
 </style>
 </head>
 <body>
@@ -1270,9 +1272,38 @@ function parseAct(raw){
 }
 async function actionCmd(t,c){
   var n=norm(t),reply=function(x){commit(c,t,x);add("bot",x);speak(x);return true};
+  if(study){
+    if(/^(dur|bitir|çalışmayı bitir|sesli çalışmayı bitir)$/.test(n)){var rr="Çalışma bitti. "+study.ok+" doğru, "+(study.n-study.ok)+" yanlış.";study=null;setVoice(false);return reply(rr)}
+    var cur=study.cur,ok2=sim(t,cur.a)>=0.5;
+    if(ok2)study.ok++;
+    var verdict=(ok2?"Doğru.":"Yanlış. Doğru cevap: "+cur.a)+"\n";
+    var nx=studyAsk();
+    return reply(verdict+nx);
+  }
+  if(/^sesli (çalış|çalışalım|sor|sınama)$/.test(n)){
+    if(!S.cards||!S.cards.length)return reply("Önce ders kartı ekleyin: 'Kart: soru = cevap'.");
+    study={q:S.cards.slice().sort(function(){return Math.random()-.5}),cur:null,n:0,ok:0};
+    return reply(studyAsk());
+  }
+  var sm=t.match(/^sınav ekle\s*:?\s*(.+?)\s*=\s*(.+)$/i);
+  if(sm){var dt=parseDate(norm(sm[2]));if(!dt)return reply("Tarihi anlayamadım. Örnek: 'Fizik = 20 Kasım'.");S.exams=S.exams||[];S.exams.push({n:sm[1].trim(),ts:dt.getTime()});save();return reply(sm[1].trim()+" sınavı eklendi: "+dt.toLocaleDateString("tr-TR",{day:"numeric",month:"long",year:"numeric"})+".")}
+  if(/^sınavlarım$/.test(n)){var EX=(S.exams||[]).slice().sort(function(a,b){return a.ts-b.ts});return reply(EX.length?"Sınavlar:\n"+EX.map(function(x){return "- "+x.n+": "+daysTo(x.ts)}).join("\n"):"Kayıtlı sınav yok. 'Sınav ekle: Fizik = 20 Kasım' yazın.")}
+  if(/^(günün özeti|özet|brifing|bugün ne var)$/.test(n))return reply(briefText());
+  var pm=t.match(/^çalışma planı\s*:?\s*(.+)$/i);
+  if(pm){
+    var pr="Öğrenci için Türkçe kısa çalışma planı yaz. Konu veya kaynak: "+pm[1]+". Her gün için tek satır, '- Gün N: ...' biçiminde, en fazla 8 satır. Başka açıklama yazma.";
+    try{
+      var outp=await answerChain({msgs:[]},pr,document.createElement("div"));
+      var items=outp.split("\n").filter(function(l){return /^\s*[-•]/.test(l)}).map(function(l){return l.replace(/^\s*[-•]\s*/,"").trim()}).filter(Boolean);
+      if(!items.length)return reply(outp);
+      pendingAct={kind:"plan",items:items};
+      return reply(items.join("\n")+"\n\nBu "+items.length+" maddeyi yapılacaklara ekleyeyim mi? (evet / hayır)");
+    }catch(e){return reply("Çalışma planı için yapay zekâ gerekiyor. Ayarlar'dan bir anahtar girin.")}
+  }
   if(pendingAct){
     var p=pendingAct;pendingAct=null;
     if(/^(evet|tamam|aç|olur|onaylıyorum)$/.test(n)){
+      if(p.kind==="plan"){p.items.forEach(function(x){S.todos.push({id:"t"+Date.now()+Math.random(),t:x,done:false,ts:Date.now()})});save();return reply(p.items.length+" madde yapılacaklara eklendi.")}
       if(p.kind==="fact"){S.facts=S.facts||[];if(S.facts.indexOf(p.text)>-1)return reply("Bu bilgi zaten kayıtlı.");S.facts.push(p.text);if(S.facts.length>50)S.facts.shift();save();return reply("Hafızaya kaydettim.")}
       if(p.kind==="tel"){reply("Arama başlatılıyor.");location.href="tel:"+p.num;return true}
       window.open(p.url,"_blank","noopener");return reply("Açıldı.");
@@ -1293,6 +1324,25 @@ function offerFact(t){
   if(!factCand(t))return;
   var s=t.trim();pendingAct={kind:"fact",text:s};
   add("bot","Bunu hafızaya kaydedeyim mi: \""+s+"\" (evet / hayır)");
+}
+
+/* Sınav geri sayımı, günlük özet, sesli çalışma yardımcıları */
+var study=null;
+function daysTo(ts){var d=Math.ceil((ts-Date.now())/864e5);return d>1?d+" gün kaldı":d===1?"yarın":d===0?"bugün":(-d)+" gün önce"}
+function nextExam(){var now=Date.now(),L=(S.exams||[]).filter(function(x){return x.ts>=now-864e5}).sort(function(a,b){return a.ts-b.ts});return L.length?L[0]:null}
+function briefText(){
+  var d=new Date(),open=(S.todos||[]).filter(function(x){return !x.done}).length,ex=nextExam();
+  var s="Bugün "+d.toLocaleDateString("tr-TR",{day:"numeric",month:"long",weekday:"long"})+".";
+  s+=" "+(open?open+" açık yapılacağınız var.":"Açık yapılacağınız yok.");
+  if(ex)s+=" "+ex.n+" sınavına "+daysTo(ex.ts)+".";
+  if(S.cards&&S.cards.length)s+=" "+S.cards.length+" ders kartınız hazır.";
+  return s;
+}
+function sim(a,b){var A=norm(a);var w=norm(b).replace(/[^a-zçğıöşü0-9 ]/g," ").split(/\s+/).filter(function(k){return k.length>2});if(!w.length)return A.length?1:0;return w.filter(function(k){return A.indexOf(k)>-1}).length/w.length}
+function studyAsk(){
+  if(!study.q.length){var r="Bitti. "+study.ok+" doğru, "+(study.n-study.ok)+" yanlış.";study=null;setVoice(false);return r}
+  study.cur=study.q.shift();study.n++;
+  var m="Soru: "+study.cur.q;speak(m);setVoice(true);return m;
 }
 
 </script>
@@ -1444,7 +1494,7 @@ function homeK(root,d,hi){
   pl.appendChild(mk("i","pl1"));pl.appendChild(mk("i","pl2"));pl.appendChild(mk("i","pl3"));
   st.appendChild(mk("div","beam"));st.appendChild(pl);st.appendChild(dialBtn());root.appendChild(st);
   var h=mk("div","hello");h.appendChild(mk("h1","","Merhaba "+(userName()||"efendim")));h.appendChild(mk("p","","Size nasıl yardımcı olabilirim?"));
-  root.appendChild(h);setupCard(root);
+  root.appendChild(h);root.appendChild(mk("p","brief",briefText()));setupCard(root);
 }
 function fillChips(){
   var c=document.getElementById("chipsbar"),q=document.getElementById("quotebar");if(!c)return;c.innerHTML="";if(q)q.innerHTML="";if(curStyle()!=="k")return;
