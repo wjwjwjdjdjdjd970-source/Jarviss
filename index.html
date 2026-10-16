@@ -437,7 +437,7 @@ var PN={claude:"Claude",gemini:"Gemini",anthropic:"Anthropic",openai:"OpenAI",of
 PRESETS.forEach(function(p){PN[p[0]]=p[1]});
 
 try{var raw=localStorage.getItem(KEY);if(raw){var o=JSON.parse(raw);if(o&&o.chats){S.chats=o.chats;S.cur=o.cur;S.facts=o.facts||[];S.notes=o.notes||[];S.todos=o.todos||[];S.cards=o.cards||[];S.cache=o.cache||[];S.exams=o.exams||[];S.contacts=o.contacts||[];S.reminders=o.reminders||[];for(var k in o.set)S.set[k]=o.set[k]}}}catch(e){}
-function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){if(!warned){warned=true;note("Kayıt yapılamıyor: tarayıcı depolaması kapalı.")}}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){if(!warned){warned=true;note("Kayıt yapılamıyor: telefon depolaması dolu olabilir. Yedek alıp eski sohbetleri silin.")}}}
 function newChat(){var c={id:"c"+Date.now(),title:"Yeni sohbet",ts:Date.now(),msgs:[]};S.chats.unshift(c);S.cur=c.id;save();return c}
 function chat(){for(var i=0;i<S.chats.length;i++)if(S.chats[i].id===S.cur)return S.chats[i];return newChat()}
 function prov(){var p=S.set.provider;if(!p){if(sample)p="claude";else{p="offline";["gemini","anthropic"].concat(PRESETS.map(function(q){return q[0]})).forEach(function(x){if(p==="offline"&&S.set.k[x])p=x})}}return p}
@@ -469,6 +469,15 @@ function loadChat(){
   if(!c.msgs.length){renderHome();if(typeof fireDue==="function")fireDue();return}
   c.msgs.forEach(function(m){add(m.r,m.t,m.ts)});if(typeof navSync==="function")navSync();if(typeof fireDue==="function")fireDue();
 }
+/* Kayıt normalizasyonu: yüklemede eksik alan kalmasın (sürüm değişince veya eski kayıtta) */
+function normS(){
+  var d={chats:[],facts:[],notes:[],todos:[],cards:[],cache:[],exams:[],contacts:[],reminders:[]};
+  Object.keys(d).forEach(function(k){if(!Array.isArray(S[k]))S[k]=d[k]});
+  if(!S.v)S.v=2;
+  S.set=S.set||{};S.set.k=S.set.k||{};S.set.m=S.set.m||{};S.set.b=S.set.b||{};
+  if(S.cur&&!S.chats.some(function(c){return c.id===S.cur}))S.cur=S.chats.length?S.chats[0].id:null;
+}
+normS();
 
 </script>
 <script>
@@ -540,9 +549,8 @@ function core(raw){
     var cv=convert(parseFloat(m[1].replace(",",".")),m[2].replace("°",""),m[3].replace("°",""));if(cv!==null)return m[1]+" "+m[2]+" = "+fmt(cv)+" "+m[3];
   }
   if(/pomodoro/.test(t)){
-    setTimeout(function(){var s="Efendim, 25 dakika doldu. 5 dakika mola verin.";add("bot",s);speak(s);try{navigator.vibrate&&navigator.vibrate([300,150,300])}catch(x){}},1500000);
-    setTimeout(function(){var s="Mola bitti. Hazırsanız yeni bir tur başlatabiliriz.";add("bot",s);speak(s);try{navigator.vibrate&&navigator.vibrate([300])}catch(x){}},1800000);
-    return "Pomodoro başladı: 25 dakika odak, sonra 5 dakika mola. Sayfanın açık kalması gerekir.";
+    var pnow=Date.now();addReminder("Efendim, 25 dakika doldu. 5 dakika mola verin.",pnow+1500000,true);addReminder("Mola bitti. Hazırsanız yeni bir tur başlatabiliriz.",pnow+1800000,true);
+    return "Pomodoro başladı: 25 dakika odak, sonra 5 dakika mola. Uygulama kapalı olsa da süre dolunca açtığınızda gösterilir.";
   }
   if((m=raw.match(/^(?:kart|flashcard)\s*(?:ekle)?\s*[:,]\s*(.+?)\s*=\s*(.+)$/i))){S.cards.push({id:"k"+Date.now(),q:m[1].trim(),a:m[2].trim(),ts:Date.now()});save();return "Kart eklendi ("+S.cards.length+" kart)."}
   if(/^(beni sına|sına beni|soru sor|quiz)$/.test(t)){
@@ -567,8 +575,8 @@ function core(raw){
     var n=+m[1],u=m[2],ms=n*(u==="saat"?3600000:(u==="dakika"||u==="dk")?60000:1000);
     if(ms>21600000)return "En fazla 6 saatlik zamanlayıcı kurabilirim efendim.";
     var what=raw.replace(/\d+\s*(saniye|sn|dakika|dk|saat)\s*(sonra|içinde)?/i,"").replace(/(bana|beni)?\s*(hatırlat|uyar)\S*/i,"").replace(/[.!?]/g,"").trim();
-    setTimeout(function(){var s="Efendim, süre doldu"+(what?": "+what:".");add("bot",s);speak(s);try{navigator.vibrate&&navigator.vibrate([300,150,300])}catch(x){}},ms);
-    return "Tamam, "+n+" "+u+" sonra hatırlatacağım. Sayfanın açık kalması gerekir.";
+    addReminder("Efendim, süre doldu"+(what?": "+what:"."),Date.now()+ms,true);
+    return "Tamam, "+n+" "+u+" sonra hatırlatacağım. Uygulama kapalı olsa da süre dolunca açtığınızda gösterilir.";
   }
   if(/^(lütfen\s+)?hatırlat/.test(t))return "Ne zaman hatırlatayım? Örneğin: '10 dakika sonra su içmeyi hatırlat'.";
   return null;
@@ -671,6 +679,7 @@ function applyTheme(){
 
 </script>
 <script>
+function fetchT(u,o,ms){var c=new AbortController(),o2=Object.assign({},o||{},{signal:c.signal}),t=setTimeout(function(){c.abort()},ms||60000);return fetch(u,o2).finally(function(){clearTimeout(t)})}
 function initAI(){
 try{if(window.claude&&claude.use){claude.use("sample").then(function(s){sample=s;setState(state)}).catch(function(){})}}catch(e){}
 }
@@ -707,19 +716,19 @@ async function callAI(p,hist,q,onText){
   var res,data;
   if(p==="gemini"){
     var gm=ms.map(function(m){return {role:m.role==="user"?"user":"model",parts:[{text:m.content}]}});
-    res=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+encodeURIComponent(model)+":generateContent?key="+encodeURIComponent(key),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({systemInstruction:{parts:[{text:sys}]},contents:gm})});
+    res=await fetchT("https://generativelanguage.googleapis.com/v1beta/models/"+encodeURIComponent(model)+":generateContent?key="+encodeURIComponent(key),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({systemInstruction:{parts:[{text:sys}]},contents:gm})});
     if(!res.ok)throw {status:res.status,msg:await res.text()};
     data=await res.json();
     var pt=data.candidates&&data.candidates[0]&&data.candidates[0].content&&data.candidates[0].content.parts;
     return (pt||[]).map(function(x){return x.text||""}).join("");
   }
   if(p==="anthropic"){
-    res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"content-type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:model,max_tokens:1500,system:sys,messages:ms})});
+    res=await fetchT("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"content-type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:model,max_tokens:1500,system:sys,messages:ms})});
     if(!res.ok)throw {status:res.status,msg:await res.text()};
     data=await res.json();return (data.content||[]).map(function(c){return c.text||""}).join("");
   }
   var base=(S.set.b[p]||presetOf(p)[2]||"").replace(/\/+$/,"");if(!base)throw {code:"nobase"};
-  res=await fetch(base+"/chat/completions",{method:"POST",headers:{"content-type":"application/json","authorization":"Bearer "+key},body:JSON.stringify({model:model,messages:[{role:"system",content:sys}].concat(ms)})});
+  res=await fetchT(base+"/chat/completions",{method:"POST",headers:{"content-type":"application/json","authorization":"Bearer "+key},body:JSON.stringify({model:model,messages:[{role:"system",content:sys}].concat(ms)})});
   if(!res.ok)throw {status:res.status,msg:await res.text()};
   data=await res.json();return (data.choices&&data.choices[0]&&data.choices[0].message.content)||"";
 }
@@ -788,18 +797,18 @@ function apiErr(e){
 async function listModels(p,key){
   var res,data,ids=[];
   if(p==="gemini"){
-    res=await fetch("https://generativelanguage.googleapis.com/v1beta/models?pageSize=100&key="+encodeURIComponent(key));
+    res=await fetchT("https://generativelanguage.googleapis.com/v1beta/models?pageSize=100&key="+encodeURIComponent(key));
     if(!res.ok)throw {status:res.status,msg:await res.text()};
     data=await res.json();
     (data.models||[]).forEach(function(m){if(/generateContent/.test((m.supportedGenerationMethods||[]).join())&&/^models\/gemini/.test(m.name))ids.push(m.name.replace("models/",""))});
     ids.sort(function(a,b){return (/flash/.test(b)?1:0)-(/flash/.test(a)?1:0)||(a<b?1:-1)});
   }else if(p==="anthropic"){
-    res=await fetch("https://api.anthropic.com/v1/models?limit=100",{headers:{"x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"}});
+    res=await fetchT("https://api.anthropic.com/v1/models?limit=100",{headers:{"x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"}});
     if(!res.ok)throw {status:res.status,msg:await res.text()};
     data=await res.json();ids=(data.data||[]).map(function(m){return m.id});
   }else{
     var base=(S.set.b[p]||presetOf(p)[2]||"").replace(/\/+$/,"");if(!base)throw {code:"nobase"};
-    res=await fetch(base+"/models",{headers:{authorization:"Bearer "+key}});
+    res=await fetchT(base+"/models",{headers:{authorization:"Bearer "+key}});
     if(!res.ok)throw {status:res.status,msg:await res.text()};
     data=await res.json();ids=(data.data||[]).map(function(m){return m.id});
   }
@@ -807,7 +816,7 @@ async function listModels(p,key){
 }
 
 async function postJson(url,headers,body){
-  var res=await fetch(url,{method:"POST",headers:headers,body:JSON.stringify(body)});
+  var res=await fetchT(url,{method:"POST",headers:headers,body:JSON.stringify(body)});
   if(!res.ok)throw {status:res.status,msg:await res.text()};
   return res.json();
 }
@@ -1329,6 +1338,8 @@ async function actionCmd(t,c){
   if(/^sınavlarım$/.test(n)){var EX=(S.exams||[]).slice().sort(function(a,b){return a.ts-b.ts});return reply(EX.length?"Sınavlar:\n"+EX.map(function(x){return "- "+x.n+": "+daysTo(x.ts)}).join("\n"):"Kayıtlı sınav yok. 'Sınav ekle: Fizik = 20 Kasım' yazın.")}
   if(/^(günün özeti|özet|brifing|bugün ne var)$/.test(n))return reply(briefText());
   if(/^yedekle$/.test(n))return reply(downloadBackup());
+  if(/^sohbeti dışa aktar$/.test(n))return reply(exportChat());
+  if(/^kaynakları indir$/.test(n))return reply(downloadSources());
   if(/^animasyonu kapat$/.test(n)){S.set.noanim=true;save();applyTheme();return reply("Animasyonlar kapatıldı. 'Animasyonu aç' ile geri alabilirsiniz.")}
   if(/^animasyonu aç$/.test(n)){S.set.noanim=false;save();applyTheme();return reply("Animasyonlar açıldı.")}
   var rm=t.match(/^(yarın\s+)?(\d{1,2})[:.](\d{2})'?(?:da|de|ta|te)?\s+hatırlat\s*:?\s*(.+)$/i);
@@ -1423,6 +1434,28 @@ function restoreFrom(file){
   };
   r.readAsText(file);
 }
+function downloadText(name,text,mime){
+  var blob=new Blob([text],{type:mime||"text/plain;charset=utf-8"});
+  var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();
+  setTimeout(function(){URL.revokeObjectURL(a.href);a.remove()},1500);
+}
+function exportChat(){
+  var c=chat();if(!c.msgs.length)return "Bu sohbet boş, dışa aktarılacak bir şey yok.";
+  var body=c.msgs.map(function(m){return "["+new Date(m.ts).toLocaleString("tr-TR")+"] "+(m.r==="user"?"Siz":"Jarvis")+": "+m.t}).join("\n\n");
+  var nm=(c.title||"sohbet").replace(/[^a-zA-Z0-9çğıöşüÇĞİÖŞÜ _-]/g,"").trim().slice(0,40)||"sohbet";
+  downloadText(nm+".txt","Jarvis sohbeti: "+(c.title||"")+"\n\n"+body);
+  return "Sohbet dosyası hazırlandı: "+nm+".txt. İndirilenler klasörüne bakın.";
+}
+function downloadSources(){
+  if(!SRCS.length)return "Kayıtlı kaynak yok.";
+  SRCS.forEach(function(s,i){
+    setTimeout(function(){
+      var a=document.createElement("a");a.href=URL.createObjectURL(s.blob);a.download=s.name+".pdf";document.body.appendChild(a);a.click();
+      setTimeout(function(){URL.revokeObjectURL(a.href);a.remove()},3000);
+    },i*1200);
+  });
+  return SRCS.length+" kaynak indiriliyor. Tarayıcı birden fazla indirmeye izin isterse onaylayın.";
+}
 function pickBackup(){
   var fi=document.createElement("input");fi.type="file";fi.accept="application/json,.json";
   fi.onchange=function(){if(fi.files&&fi.files[0])restoreFrom(fi.files[0])};fi.click();
@@ -1431,12 +1464,20 @@ function pickBackup(){
 </script>
 <script>
 /* Hatırlatıcılar: sayfa açıkken zamanı gelince sohbete yazar, sesli okur, titretir. Sayfa kapalıysa açılışta geçmiş olanları gösterir. */
-function addReminder(text,ts){S.reminders=S.reminders||[];S.reminders.push({id:"r"+Date.now()+Math.random(),t:text,ts:ts,done:false});save()}
+function addReminder(text,ts,raw){S.reminders=S.reminders||[];S.reminders.push({id:"r"+Date.now()+Math.random(),t:text,ts:ts,done:false,raw:!!raw});save()}
 function fireDue(){
   var now=Date.now(),due=(S.reminders||[]).filter(function(r){return !r.done&&r.ts<=now});
   if(!due.length)return;
-  due.forEach(function(r){r.done=true;var m="Hatırlatma: "+r.t;add("bot",m);speak(m);try{navigator.vibrate&&navigator.vibrate([300,150,300])}catch(e){}});
+  due.forEach(function(r){r.done=true;var m=r.raw?r.t:"Hatırlatma: "+r.t;add("bot",m);speak(m);try{navigator.vibrate&&navigator.vibrate([300,150,300])}catch(e){}
+    if(/^Haftalık yedek/.test(r.t))addReminder(r.t,r.ts+7*864e5);
+  });
   save();
+}
+
+function ensureBackupReminder(){
+  S.reminders=S.reminders||[];
+  if(S.reminders.some(function(r){return /^Haftalık yedek/.test(r.t)}))return;
+  addReminder("Haftalık yedek: Daha fazla > Yedekle ile verilerinizi indirin.",Date.now()+7*864e5);
 }
 
 </script>
@@ -1651,7 +1692,7 @@ function buildSig(){
 
 </script>
 <script>
-applyTheme();initUI();initVoice();initAI();initInput();initSheet();initSources();$("orb").innerHTML=dialSvg();buildBg();buildSig();initDock();window.addEventListener("online",updNet);window.addEventListener("offline",updNet);tickDial();setInterval(tickDial,20000);setInterval(fireDue,20000);
+applyTheme();initUI();initVoice();initAI();initInput();initSheet();initSources();$("orb").innerHTML=dialSvg();buildBg();buildSig();initDock();window.addEventListener("online",updNet);window.addEventListener("offline",updNet);tickDial();setInterval(tickDial,20000);ensureBackupReminder();setInterval(fireDue,20000);
 setVol();chat();loadChat();setState("idle");
 if("serviceWorker" in navigator&&location.protocol.indexOf("http")===0){navigator.serviceWorker.register("sw.js").catch(function(){})}
 
