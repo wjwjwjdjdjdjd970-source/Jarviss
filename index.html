@@ -349,10 +349,41 @@ button.gc{cursor:pointer}
 .qw{opacity:.35}
 
 .brief{margin:6px 14px 0;text-align:center;font-size:12.5px;color:var(--mut);line-height:1.45}
+
+/* Sigma Jarvis: tam animasyon (yalnızca data-sig açıkken) */
+#sigbg{display:none}
+[data-sig] #sigbg{display:block;position:fixed;top:0;left:0;right:0;bottom:0;z-index:0;pointer-events:none;overflow:hidden}
+[data-sig] #sigbg .grid{position:absolute;left:-60%;right:-60%;bottom:-8%;height:68%;background-image:linear-gradient(rgba(var(--acrgb),.42) 1px,transparent 1px),linear-gradient(90deg,rgba(var(--acrgb),.42) 1px,transparent 1px);background-size:44px 44px;transform:perspective(380px) rotateX(64deg);transform-origin:50% 100%;animation:gridmove 3.6s linear infinite;opacity:.32;-webkit-mask-image:linear-gradient(transparent,#000 70%);mask-image:linear-gradient(transparent,#000 70%)}
+@keyframes gridmove{from{background-position:0 0}to{background-position:0 44px}}
+[data-sig] #sigbg .scan{position:absolute;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,rgba(var(--acrgb),.95),transparent);box-shadow:0 0 18px var(--ac);animation:scan 7s ease-in-out infinite}
+@keyframes scan{0%{top:-2%;opacity:.2}50%{top:100%;opacity:.9}100%{top:-2%;opacity:.2}}
+[data-sig] #sigbg i.p{position:absolute;bottom:-8px;width:3px;height:3px;border-radius:50%;background:var(--ac);box-shadow:0 0 8px var(--ac);animation:float linear infinite;opacity:0}
+@keyframes float{0%{transform:translateY(0);opacity:0}15%{opacity:.9}100%{transform:translateY(-110vh);opacity:0}}
+[data-sig] .ttl b{animation:flick 5s infinite}
+@keyframes flick{0%,91%,100%{opacity:1;transform:none;text-shadow:0 0 10px var(--ac)}92%{opacity:.55;transform:skewX(-10deg);text-shadow:-3px 0 #ff3d6e,3px 0 var(--ac)}94%{opacity:1;transform:translateX(2px)}96%{opacity:.7;transform:translateX(-2px)}}
+[data-sig] .ring{animation:hueshift 10s ease-in-out infinite}
+@keyframes hueshift{0%,100%{filter:drop-shadow(0 0 10px var(--ac)) hue-rotate(0deg)}50%{filter:drop-shadow(0 0 22px var(--ac)) hue-rotate(35deg)}}
+[data-sig] .stage::before{animation:pulseglow 3s ease-in-out infinite}
+@keyframes pulseglow{0%,100%{transform:scale(.9);opacity:.6}50%{transform:scale(1.1);opacity:1}}
+[data-sig] .hello h1{text-shadow:0 0 14px rgba(var(--acrgb),.7)}
+[data-sig] .cp,[data-sig] .gc,[data-sig] .qb,[data-sig] .hello,[data-sig] .brief{animation:rise .75s ease both}
+[data-sig] .cp:nth-child(2){animation-delay:.08s}[data-sig] .cp:nth-child(3){animation-delay:.16s}[data-sig] .cp:nth-child(4){animation-delay:.24s}[data-sig] .cp:nth-child(5){animation-delay:.32s}
+[data-sig] .gc:nth-child(2){animation-delay:.1s}[data-sig] .gc:nth-child(3){animation-delay:.2s}
+@keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+[data-sig] .dk.on::after{animation:blink 1.6s ease-in-out infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
+[data-sig] footer{animation:edgepulse 3s ease-in-out infinite}
+@keyframes edgepulse{0%,100%{box-shadow:0 0 14px rgba(var(--acrgb),.25)}50%{box-shadow:0 0 34px rgba(var(--acrgb),.65)}}
+[data-sig] .beam{animation:bm 2.2s ease-in-out infinite alternate}
+@media (prefers-reduced-motion:reduce){[data-sig] *{animation:none!important}}
+
+[data-sig] .stage{height:220px}
+[data-sig] .stage .bigdial .ring{width:220px;height:220px}
 </style>
 </head>
 <body>
 <div id="bgfx"></div>
+<div id="sigbg" aria-hidden="true"></div>
 <header>
   <button id="orb" class="orbbtn" aria-label="Komuta merkezi"></button>
   <div class="ttl"><b>Jarvis</b><span id="ct"></span></div>
@@ -632,7 +663,7 @@ function applyTheme(){
   set("--rule",(t[14]===2?2:1)+"px");set("--hr",t[14]>1?ink:t[8]);
   var x=tex(t[13],ink);set("--grid",x[0]);set("--gs",x[1]);
   var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute("content",t[2]);
-  de.setAttribute("data-theme",t[0]);de.setAttribute("data-style",curStyle());var ob=document.getElementById("orb");if(ob)ob.innerHTML=dialSvg();
+  de.setAttribute("data-theme",t[0]);de.setAttribute("data-style",isK()?"k":curStyle());if(curStyle()==="s")de.setAttribute("data-sig","1");else if(de.removeAttribute)de.removeAttribute("data-sig");var ob=document.getElementById("orb");if(ob)ob.innerHTML=dialSvg();
 }
 
 </script>
@@ -1348,11 +1379,12 @@ function studyAsk(){
 </script>
 <script>
 /* Üç stil (c: Jarvis HUD, a: Canlı, b: Sakin): ana ekran + kadran. Kadran gerçek saati gösterir; dokununca sesli sohbet açılır. */
-var STYLES=[["k","Konsol","reaktor","Reaktör, panel ve alt menü"],["c","Jarvis","sonar","Kadran ve ekran çizgileri"],["a","Canlı","nane","Renkli, yuvarlak, canlı"],["b","Sakin","atlas","Dergi gibi, serif yazı"]];
-function curStyle(){var s=S.set.style;return s==="a"||s==="b"||s==="c"||s==="k"?s:"k"}
+var STYLES=[["s","Sigma Jarvis","reaktor","Tam animasyonlu, parlak"],["k","Konsol","reaktor","Reaktör, panel ve alt menü"],["c","Jarvis","sonar","Kadran ve ekran çizgileri"],["a","Canlı","nane","Renkli, yuvarlak, canlı"],["b","Sakin","atlas","Dergi gibi, serif yazı"]];
+function curStyle(){var s=S.set.style;return s==="a"||s==="b"||s==="c"||s==="k"||s==="s"?s:"k"}
+function isK(){var s=curStyle();return s==="k"||s==="s"}
 function pad2(n){return (n<10?"0":"")+n}
 function dialSvg(full){
-  if(curStyle()==="k")return reactorSvg(!!full);
+  if(isK())return reactorSvg(!!full);
   var t="",i;
   for(i=0;i<60;i++){var a=i*6*Math.PI/180,r1=i%5?45.5:42.5,r2=48.5;
     t+='<line x1="'+(50+r1*Math.sin(a)).toFixed(2)+'" y1="'+(50-r1*Math.cos(a)).toFixed(2)+'" x2="'+(50+r2*Math.sin(a)).toFixed(2)+'" y2="'+(50-r2*Math.cos(a)).toFixed(2)+'"/>';}
@@ -1422,7 +1454,7 @@ function homeC(root,d,hi){
 function renderHome(){
   var d=new Date(),hr=d.getHours(),hi=hr<5?"İyi geceler":hr<12?"Günaydın":hr<18?"İyi günler":"İyi akşamlar",st=curStyle(),root=document.createElement("div");
   root.id="home";root.className="h"+st;
-  (st==="k"?homeK:st==="a"?homeA:st==="b"?homeB:homeC)(root,d,hi);
+  (isK()?homeK:st==="a"?homeA:st==="b"?homeB:homeC)(root,d,hi);
   document.documentElement.setAttribute("data-home","1");
   msgs.appendChild(root);fillChips();navSync();tickDial();
 }
@@ -1447,21 +1479,22 @@ function reactorSvg(full){
   '<circle class="core" cx="120" cy="120" r="19" fill="url(#rg)"/><circle cx="120" cy="120" r="5" fill="#fff"/></g></svg>';
 }
 function userName(){for(var i=0;i<S.facts.length;i++){var m=S.facts[i].match(/^Kullanıcının adı (.+)$/);if(m)return m[1]}return ""}
-var WX=null,WXT={0:"Açık",1:"Çoğunlukla açık",2:"Parçalı bulutlu",3:"Kapalı",45:"Sisli",48:"Sisli",51:"Çiseleme",53:"Çiseleme",55:"Çiseleme",61:"Yağmurlu",63:"Yağmurlu",65:"Şiddetli yağmur",71:"Karlı",73:"Karlı",75:"Yoğun kar",80:"Sağanak",81:"Sağanak",82:"Şiddetli sağanak",95:"Fırtına",96:"Fırtına",99:"Fırtına"};
+var WX=null,WXERR=false,WXT={0:"Açık",1:"Çoğunlukla açık",2:"Parçalı bulutlu",3:"Kapalı",45:"Sisli",48:"Sisli",51:"Çiseleme",53:"Çiseleme",55:"Çiseleme",61:"Yağmurlu",63:"Yağmurlu",65:"Şiddetli yağmur",71:"Karlı",73:"Karlı",75:"Yoğun kar",80:"Sağanak",81:"Sağanak",82:"Şiddetli sağanak",95:"Fırtına",96:"Fırtına",99:"Fırtına"};
 function wxIcon(c,day){return c<=1?(day?"sun":"moon"):((c>=51&&c<=67)||(c>=80&&c<=82)||c>=95)?"rain":"cloud"}
 function locRow(n){var l=mk("div","loc");l.innerHTML=ic("pin");l.appendChild(mk("span","",n));return l}
 function updWx(){
   var el=document.getElementById("wx");if(!el)return;el.innerHTML="";var c=S.set.city;
-  if(!c||!WX){var t=mk("div","wt");t.innerHTML=ic(c?"cloud":"pin");t.appendChild(mk("small","",c?"Yükleniyor…":"Şehir seçmek için dokunun"));el.appendChild(t);if(c)el.appendChild(locRow(c.name));return}
+  if(!c||!WX){var t=mk("div","wt");t.innerHTML=ic(c?"cloud":"pin");t.appendChild(mk("small","",!c?"Şehir seçmek için dokunun":WXERR?"Hava alınamadı":"Yükleniyor…"));el.appendChild(t);if(c)el.appendChild(locRow(c.name));return}
   var w=mk("div","wt");w.innerHTML=ic(wxIcon(WX.c,WX.d));w.appendChild(mk("b","",WX.t+"°C"));el.appendChild(w);
   el.appendChild(mk("small","",WXT[WX.c]||""));el.appendChild(locRow(c.name));
 }
 function fetchWeather(){
   var c=S.set.city;if(!c||!window.fetch)return;var k=c.lat+","+c.lon;
   if(WX&&WX.k===k&&Date.now()-WX.ts<1800000){updWx();return}
+  WXERR=false;updWx();
   fetch("https://api.open-meteo.com/v1/forecast?latitude="+c.lat+"&longitude="+c.lon+"&current=temperature_2m,weather_code,is_day&timezone=auto").then(function(r){return r.json()}).then(function(j){
     var u=j.current;if(!u)return;WX={t:Math.round(u.temperature_2m),c:u.weather_code,d:u.is_day,ts:Date.now(),k:k};updWx();
-  }).catch(function(){});
+  }).catch(function(){WXERR=true;updWx()});
 }
 function weatherPanel(){
   var b=pnHead("Hava durumu");
@@ -1497,7 +1530,7 @@ function homeK(root,d,hi){
   root.appendChild(h);root.appendChild(mk("p","brief",briefText()));setupCard(root);
 }
 function fillChips(){
-  var c=document.getElementById("chipsbar"),q=document.getElementById("quotebar");if(!c)return;c.innerHTML="";if(q)q.innerHTML="";if(curStyle()!=="k")return;
+  var c=document.getElementById("chipsbar"),q=document.getElementById("quotebar");if(!c)return;c.innerHTML="";if(q)q.innerHTML="";if(!isK())return;
   var L=[["list","Planım",function(){ask("Yapılacaklar")}],["cards","Beni sına",cardsGo],["cbox","Pomodoro",function(){ask("Pomodoro başlat")}],["set","Zamanlayıcı",function(){inp.value="5 dakika sonra hatırlat: ";inp.focus()}]];
   if(SRCS.length)L.push(["book",SRCS[0].name,function(){inp.value=SRCS[0].name+" 10. sayfa";inp.focus()}]);
   L.forEach(function(a){var b=mk("button","cp");b.innerHTML=ic(a[0]);b.appendChild(mk("span","",a[1]));b.onclick=a[2];c.appendChild(b)});
@@ -1547,9 +1580,15 @@ function buildBg(){
   el.innerHTML='<svg viewBox="0 0 400 200" preserveAspectRatio="xMidYMax slice" aria-hidden="true">'+w+'</svg>';
 }
 
+function buildSig(){
+  var el=document.getElementById("sigbg");if(!el||el.childElementCount)return;
+  el.innerHTML='<div class="grid"></div><div class="scan"></div>';
+  for(var i=0;i<36;i++){var p=document.createElement("i");p.className="p";p.style.left=(Math.random()*100).toFixed(1)+"%";p.style.animationDuration=(6+Math.random()*8).toFixed(1)+"s";p.style.animationDelay=(-Math.random()*12).toFixed(1)+"s";el.appendChild(p)}
+}
+
 </script>
 <script>
-applyTheme();initUI();initVoice();initAI();initInput();initSheet();initSources();$("orb").innerHTML=dialSvg();buildBg();initDock();window.addEventListener("online",updNet);window.addEventListener("offline",updNet);tickDial();setInterval(tickDial,20000);
+applyTheme();initUI();initVoice();initAI();initInput();initSheet();initSources();$("orb").innerHTML=dialSvg();buildBg();buildSig();initDock();window.addEventListener("online",updNet);window.addEventListener("offline",updNet);tickDial();setInterval(tickDial,20000);
 setVol();chat();loadChat();setState("idle");
 if("serviceWorker" in navigator&&location.protocol.indexOf("http")===0){navigator.serviceWorker.register("sw.js").catch(function(){})}
 
