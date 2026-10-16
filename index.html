@@ -1231,7 +1231,9 @@ function sourcesPanel(){
     try{
       var o={id:"s"+Date.now(),name:n,first:Math.max(1,parseInt(fs.value,10)||1),size:f.size,blob:f};
       var m=await loadPdfJs(),doc=await m.getDocument({data:await f.arrayBuffer()}).promise;
-      o.pages=doc.numPages;await dbPut(o);SRCS.push(o);sourcesPanel();
+      o.pages=doc.numPages;o.texts=[];
+      for(var pi=1;pi<=doc.numPages;pi++){st.textContent="Metin çıkarılıyor: "+pi+" / "+doc.numPages;var tc=await (await doc.getPage(pi)).getTextContent();o.texts.push(tc.items.map(function(x){return x.str}).join(" "))}
+      st.textContent="";await dbPut(o);SRCS.push(o);sourcesPanel();
     }catch(e){st.textContent=srcErr(e)}
   };
   if(SRCS.length)b.appendChild(mk("div","lb","Ekli kaynaklar"));
@@ -1243,6 +1245,26 @@ function sourcesPanel(){
     d.onclick=function(){dbDel(s.id).then(function(){SRCS=SRCS.filter(function(x){return x!==s});pdfCache={};sourcesPanel()})};
     r.appendChild(tx);r.appendChild(d);b.appendChild(r);
   });
+}
+/* Kaynakta metin arama: sayfa numarası döner (kitabın kendi sayfa numarasına göre) */
+function srcSearch(q){
+  var words=strip(q).toLocaleLowerCase("tr-TR").trim().split(/\s+/).filter(function(x){return x.length>1});
+  if(!words.length)return "Aranacak kelimeyi yazın.";
+  var outs=[];
+  SRCS.forEach(function(s){
+    if(!s.texts){outs.push(s.name+": arama için kaynağı silip yeniden ekleyin.");return}
+    var hits=[],snip="";
+    s.texts.forEach(function(tx,i){
+      var lt=strip(tx).toLocaleLowerCase("tr-TR");
+      if(words.every(function(w){return lt.indexOf(w)>-1})){
+        var bp=i+1-(s.first||1)+1;if(bp>=1)hits.push(bp);
+        if(!snip){var ix=lt.indexOf(words[0]);snip=strip(tx).slice(Math.max(0,ix-40),ix+words[0].length+60)}
+      }
+    });
+    if(!hits.length){outs.push(s.name+": eşleşme yok.");return}
+    outs.push(s.name+": "+hits.length+" sayfada geçiyor ("+hits.slice(0,12).join(", ")+(hits.length>12?"…":"")+". sayfa). Örnek: …"+snip.replace(/\s+/g," ")+"…\nAçmak için: '"+s.name+" "+hits[0]+". sayfa'");
+  });
+  return outs.join("\n\n");
 }
 function initSources(){dbAll().then(function(a){SRCS=a;if(document.getElementById("home"))loadChat()}).catch(function(){})}
 
@@ -1368,6 +1390,7 @@ async function actionCmd(t,c){
       if(p.kind==="name"){S.facts=(S.facts||[]).filter(function(f){return f.indexOf("Kullanıcının adı")!==0});S.facts.push(p.text);save();return reply("Memnun oldum, hafızama kaydettim.")}
       if(p.kind==="plan"){p.items.forEach(function(x){S.todos.push({id:"t"+Date.now()+Math.random(),t:x,done:false,ts:Date.now()})});save();return reply(p.items.length+" madde yapılacaklara eklendi.")}
       if(p.kind==="fact"){S.facts=S.facts||[];if(S.facts.indexOf(p.text)>-1)return reply("Bu bilgi zaten kayıtlı.");S.facts.push(p.text);if(S.facts.length>50)S.facts.shift();save();return reply("Hafızaya kaydettim.")}
+      if(p.kind==="sms"){location.href=p.url;return reply("Mesaj uygulamasında açıldı. Göndermeyi orada onaylayın.")}
       if(p.kind==="tel"){reply("Arama başlatılıyor.");location.href="tel:"+p.num;return true}
       window.open(p.url,"_blank","noopener");return reply("Açıldı.");
     }
@@ -1376,6 +1399,10 @@ async function actionCmd(t,c){
   var m=t.match(/^kişi ekle\s*:?\s*(.+?)\s*=\s*([+\d][\d\s-]{5,})$/i);
   if(m){S.contacts=S.contacts||[];S.contacts.push({n:m[1].trim(),p:m[2].replace(/[\s-]/g,"")});save();return reply("Kişi kaydedildi: "+m[1].trim()+".")}
   if(/^kişilerim$/.test(n)){var L=S.contacts||[];return reply(L.length?"Kişiler:\n"+L.map(function(k){return "- "+k.n}).join("\n"):"Kayıtlı kişi yok. 'Kişi ekle: Ad = numara' yazın.")}
+  var se=t.match(/^(.+?)\s+ara\s*:\s*(.+)$/i);
+  if(se){var base=norm(se[1]).replace(/['’]?(?:de|da|te|ta)$/,"");
+    if(SRCS.some(function(s){return norm(s.name)===base}))return reply(srcSearch(se[2]));}
+  var sms=parseSms(t);if(sms){pendingAct=sms;return reply(sms.ask)}
   var a=parseAct(t);
   if(!a)return false;
   pendingAct=a;return reply(a.ask);
@@ -1406,6 +1433,16 @@ function studyAsk(){
   if(!study.q.length){var r="Bitti. "+study.ok+" doğru, "+(study.n-study.ok)+" yanlış.";study=null;setVoice(false);return r}
   study.cur=study.q.shift();study.n++;
   var m="Soru: "+study.cur.q;speak(m);setVoice(true);return m;
+}
+
+/* Mesaj taslağı: kayıtlı kişiye metin hazırlar, gönderme mesaj uygulamasında kullanıcıya kalır */
+function parseSms(t){
+  var m=(t||"").trim().match(/^(.+?)\s+(?:mesaj|sms)\s*(?:yaz|gönder)?\s*:\s*(.+)$/i);if(!m)return null;
+  var n=norm(m[1]),best=null;
+  (S.contacts||[]).forEach(function(k){var nm=norm(k.n);if((n.indexOf(nm)===0||n.replace(/[a-zçğıöşü]{1,3}$/,"").indexOf(nm)===0)&&(!best||nm.length>norm(best.n).length))best=k});
+  if(!best)return null;
+  var body=m[2].trim();
+  return {kind:"sms",url:"sms:"+best.p+"?body="+encodeURIComponent(body),ask:best.n+" kişisine şu mesajı hazırlayayım mı: \""+body+"\" (evet / hayır)"};
 }
 
 </script>
