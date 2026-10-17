@@ -1,1 +1,76 @@
-{"name":"Jarvis","short_name":"Jarvis","start_url":".","display":"standalone","background_color":"#15130f","theme_color":"#15130f","lang":"tr","icons":[{"src":"icon-192.png","sizes":"192x192","type":"image/png"},{"src":"icon-512.png","sizes":"512x512","type":"image/png","purpose":"any maskable"}]}
+{
+ "name": "Jarvis",
+ "short_name": "Jarvis",
+ "start_url": ".",
+ "display": "standalone",
+ "background_color": "#0b1622",
+ "theme_color": "#0b1622",
+ "lang": "tr",
+ "icons": [
+  {
+   "src": "icon-192.png",
+   "sizes": "192x192",
+   "type": "image/png"
+  },
+  {
+   "src": "icon-512.png",
+   "sizes": "512x512",
+   "type": "image/png",
+   "purpose": "any maskable"
+  }
+ ],
+ "id": "./",
+ "scope": "./",
+ "orientation": "portrait",
+ "description": "Türkçe kişisel asistan Jarvis",
+ "shortcuts": [
+  {
+   "name": "Sohbet",
+   "short_name": "Sohbet",
+   "url": "./?go=chat",
+   "icons": [
+    {
+     "src": "icon-192.png",
+     "sizes": "192x192",
+     "type": "image/png"
+    }
+   ]
+  },
+  {
+   "name": "Defter",
+   "short_name": "Defter",
+   "url": "./?go=note",
+   "icons": [
+    {
+     "src": "icon-192.png",
+     "sizes": "192x192",
+     "type": "image/png"
+    }
+   ]
+  },
+  {
+   "name": "Sesli çalış",
+   "short_name": "Çalış",
+   "url": "./?go=study",
+   "icons": [
+    {
+     "src": "icon-192.png",
+     "sizes": "192x192",
+     "type": "image/png"
+    }
+   ]
+  },
+  {
+   "name": "Kaynaklar",
+   "short_name": "Kaynak",
+   "url": "./?go=source",
+   "icons": [
+    {
+     "src": "icon-192.png",
+     "sizes": "192x192",
+     "type": "image/png"
+    }
+   ]
+  }
+ ]
+}

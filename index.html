@@ -901,19 +901,32 @@ function speakable(t){
   if(s.length>500){s=s.slice(0,500);var i=Math.max(s.lastIndexOf(". "),s.lastIndexOf("? "),s.lastIndexOf("! "));if(i>150)s=s.slice(0,i+1);s+=" Devamı ekranda."}
   return s;
 }
+function voicesFor(lg){
+  var all=(window.speechSynthesis&&speechSynthesis.getVoices())||[];
+  return all.filter(function(x){return x.lang.slice(0,2).toLowerCase()===lg.slice(0,2).toLowerCase()}).sort(function(a,b){return a.name<b.name?-1:1});
+}
+function pickVoice(lg){
+  var v=voicesFor(lg);if(!v.length)return null;
+  var saved=S.set.voice&&S.set.voice[lg];var hit=saved?v.filter(function(x){return x.name===saved})[0]:null;if(hit)return hit;
+  var pref=function(x){var sc=0;if(/Google|Premium|Enhanced|Neural|Natural/i.test(x.name))sc+=3;if(!x.localService)sc+=2;if(/eSpeak|Standard/i.test(x.name))sc-=2;return sc};
+  return v.slice().sort(function(a,b){return pref(b)-pref(a)})[0];
+}
 function speak(text){
   if(!S.set.speak||!window.speechSynthesis){voiceNext();return}
   try{
     speechSynthesis.cancel();
     var c=speakable(text);if(!c){voiceNext();return}
-    var lg=/[\u0600-\u06FF]/.test(c)?"ar-SA":/[\u0400-\u04FF]/.test(c)?"ru-RU":"tr-TR";var u=new SpeechSynthesisUtterance(c);u.lang=lg;
-    var v=speechSynthesis.getVoices();for(var i=0;i<v.length;i++){if(v[i].lang.slice(0,2).toLowerCase()===lg.slice(0,2).toLowerCase()){u.voice=v[i];break}}
-    u.onstart=function(){setState("speak")};
-    u.onend=u.onerror=function(){setState("idle");voiceNext()};
-    speechSynthesis.speak(u);
+    var lg=/[\u0600-\u06FF]/.test(c)?"ar-SA":/[\u0400-\u04FF]/.test(c)?"ru-RU":"tr-TR";
+    var parts=(c.match(/[^.!?؟]+[.!?؟]*/g)||[c]).map(function(p){return p.trim()}).filter(Boolean);
+    var v=pickVoice(lg);
+    parts.forEach(function(p,k){
+      var u=new SpeechSynthesisUtterance(p);u.lang=lg;if(v)u.voice=v;u.rate=0.92;u.pitch=1;
+      if(k===0)u.onstart=function(){setState("speak")};
+      if(k===parts.length-1)u.onend=u.onerror=function(){setState("idle");voiceNext()};
+      speechSynthesis.speak(u);
+    });
   }catch(e){setState("idle")}
 }
-
 
 function initVoice(){
 
@@ -1360,6 +1373,9 @@ async function actionCmd(t,c){
   if(/^sınavlarım$/.test(n)){var EX=(S.exams||[]).slice().sort(function(a,b){return a.ts-b.ts});return reply(EX.length?"Sınavlar:\n"+EX.map(function(x){return "- "+x.n+": "+daysTo(x.ts)}).join("\n"):"Kayıtlı sınav yok. 'Sınav ekle: Fizik = 20 Kasım' yazın.")}
   if(/^(günün özeti|özet|brifing|bugün ne var)$/.test(n))return reply(briefText());
   if(/^yedekle$/.test(n))return reply(downloadBackup());
+  if(/^ses listesi$/.test(n)){var vl=voicesFor("tr-TR");if(!vl.length)return reply("Bu telefonda Türkçe ses bulunamadı. Telefon ayarlarında 'Metinden konuşma' bölümüne Türkçe ses ekleyin, sonra tekrar deneyin.");return reply("Türkçe sesler:\n"+vl.map(function(x,k){return (k+1)+". "+x.name}).join("\n")+"\n\nSeçmek için: 'ses 2 seç', denemek için: 'sesi dene'.")}
+  var vs=n.match(/^ses (\d+) seç$/);if(vs){var vl2=voicesFor("tr-TR"),pick=vl2[+vs[1]-1];if(!pick)return reply("Böyle bir ses yok. 'ses listesi' ile numaraya bakın.");S.set.voice=S.set.voice||{};S.set.voice["tr-TR"]=pick.name;save();return reply("Ses seçildi: "+pick.name+". Denemek için 'sesi dene' yazın.")}
+  if(/^sesi dene$/.test(n)){var was=S.set.speak;S.set.speak=true;save();speak("Merhaba efendim. Ses ayarınızı dinliyorsunuz.");S.set.speak=was;save();return reply("Ses denemesi yapılıyor.")}
   if(/^sohbeti dışa aktar$/.test(n))return reply(exportChat());
   if(/^kaynakları indir$/.test(n))return reply(downloadSources());
   if(/^animasyonu kapat$/.test(n)){S.set.noanim=true;save();applyTheme();return reply("Animasyonlar kapatıldı. 'Animasyonu aç' ile geri alabilirsiniz.")}
@@ -1730,6 +1746,12 @@ function buildSig(){
 </script>
 <script>
 applyTheme();initUI();initVoice();initAI();initInput();initSheet();initSources();$("orb").innerHTML=dialSvg();buildBg();buildSig();initDock();window.addEventListener("online",updNet);window.addEventListener("offline",updNet);tickDial();setInterval(tickDial,20000);ensureBackupReminder();setInterval(fireDue,20000);
+(function(){try{var g=new URLSearchParams(location.search).get("go");if(!g)return;
+  history.replaceState(null,"",location.pathname);
+  setTimeout(function(){
+    if(g==="chat")chatsPanel();else if(g==="note")listPanel();else if(g==="source")sourcesPanel();else if(g==="study")ask("sesli çalış");
+  },400);
+}catch(e){}})();
 setVol();chat();loadChat();setState("idle");
 if("serviceWorker" in navigator&&location.protocol.indexOf("http")===0){navigator.serviceWorker.register("sw.js").catch(function(){})}
 
