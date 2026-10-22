@@ -1260,6 +1260,24 @@ function sourcesPanel(){
   });
 }
 /* Kaynakta metin arama: sayfa numarası döner (kitabın kendi sayfa numarasına göre) */
+async function cleanPages(name,from,to){
+  var src=SRCS.filter(function(x){return norm(x.name)===norm(name)})[0];
+  if(!src)return "Böyle bir kaynak yok.";
+  if(to-from>4)to=from+4;
+  var doc=await getDoc(src),res=[];
+  src.clean=src.clean||{};
+  for(var bp=from;bp<=to;bp++){
+    var pdfPage=bp+(src.first||1)-1;if(pdfPage<1||pdfPage>doc.numPages)continue;
+    var pg=await doc.getPage(pdfPage),v1=pg.getViewport({scale:1}),v=pg.getViewport({scale:1000/v1.width});
+    var cv=document.createElement("canvas");cv.width=Math.round(v.width);cv.height=Math.round(v.height);
+    await pg.render({canvasContext:cv.getContext("2d"),viewport:v}).promise;
+    var img=cv.toDataURL("image/jpeg",.85).split(",")[1];
+    var txt=((await callVision(prov(),"Bu sayfadaki Arapça metni olduğu gibi yaz. Harekeleri koru. Başlık ve madde işaretlerini koru. Çevirme, yorum ekleme, başka hiçbir şey yazma.",[img]))||"").trim();
+    if(txt){src.clean[bp]=txt;res.push(bp)}
+  }
+  await dbPut(src);
+  return res.length?name+": "+res.join(", ")+". sayfalar temiz metne çevrildi. Arama artık bu sayfaları da kullanır.":name+": hiçbir sayfa çevrilemedi.";
+}
 function srcSearch(q){
   var words=strip(q).toLocaleLowerCase("tr-TR").trim().split(/\s+/).filter(function(x){return x.length>1});
   if(!words.length)return "Aranacak kelimeyi yazın.";
@@ -1267,10 +1285,11 @@ function srcSearch(q){
   SRCS.forEach(function(s){
     if(!s.texts){outs.push(s.name+": arama için kaynağı silip yeniden ekleyin.");return}
     var hits=[],snip="";
-    s.texts.forEach(function(tx,i){
+    s.texts.forEach(function(tx0,i){
+      var bp0=i+1-(s.first||1)+1,tx=(s.clean&&s.clean[bp0])||tx0;
       var lt=strip(tx).toLocaleLowerCase("tr-TR");
       if(words.every(function(w){return lt.indexOf(w)>-1})){
-        var bp=i+1-(s.first||1)+1;if(bp>=1)hits.push(bp);
+        var bp=bp0;if(bp>=1)hits.push(bp);
         if(!snip){var ix=lt.indexOf(words[0]);snip=strip(tx).slice(Math.max(0,ix-40),ix+words[0].length+60)}
       }
     });
@@ -1358,6 +1377,7 @@ async function actionCmd(t,c){
     if(/^(atla|pas|bilmiyorum)$/.test(n)){var sk="Atlandı. Doğru cevap: "+study.cur.a+"\n";return reply(sk+studyAsk())}
     if(/^(dur|bitir|çalışmayı bitir|sesli çalışmayı bitir)$/.test(n)){var rr="Çalışma bitti. "+study.ok+" doğru, "+(study.n-study.ok)+" yanlış.";study=null;setVoice(false);return reply(rr)}
     var cur=study.cur,ok2=sim(t,cur.a)>=0.5;
+    if(S.set.smartEval){try{var jd=await answerChain({msgs:[]},"Soru: "+cur.q+"\nDoğru cevap: "+cur.a+"\nÖğrencinin cevabı: "+t+"\nÖğrencinin cevabı anlam olarak doğru mu? Sadece DOĞRU veya YANLIŞ yaz.",document.createElement("div"));ok2=/DOĞRU/i.test(jd)&&!/YANLIŞ/i.test(jd)}catch(e){}}
     if(ok2)study.ok++;
     var verdict=(ok2?"Doğru.":"Yanlış. Doğru cevap: "+cur.a)+"\n";
     var nx=studyAsk();
@@ -1373,6 +1393,11 @@ async function actionCmd(t,c){
   if(/^sınavlarım$/.test(n)){var EX=(S.exams||[]).slice().sort(function(a,b){return a.ts-b.ts});return reply(EX.length?"Sınavlar:\n"+EX.map(function(x){return "- "+x.n+": "+daysTo(x.ts)}).join("\n"):"Kayıtlı sınav yok. 'Sınav ekle: Fizik = 20 Kasım' yazın.")}
   if(/^(günün özeti|özet|brifing|bugün ne var)$/.test(n))return reply(briefText());
   if(/^yedekle$/.test(n))return reply(downloadBackup());
+  if(/^bildirimleri aç$/.test(n))return reply(askNotify());
+  var tcm=t.match(/^(.+?)\s+temiz metin\s+(\d+)(?:\s*-\s*(\d+))?/i);
+  if(tcm){var f1=+tcm[2],t1=tcm[3]?+tcm[3]:f1;return reply("Temiz metin hazırlanıyor, bu bir süre sürebilir…\n"+await cleanPages(tcm[1].replace(/['’]?(?:de|da)$/,""),f1,t1))}
+  if(/^akıllı değerlendirme aç$/.test(n)){S.set.smartEval=true;save();return reply("Sesli cevaplar yapay zekâ ile değerlendirilecek. Her cevap bir istek harcar.")}
+  if(/^akıllı değerlendirme kapat$/.test(n)){S.set.smartEval=false;save();return reply("Sesli cevaplar kelime eşleştirmesiyle değerlendirilecek.")}
   if(/^ses listesi$/.test(n)){var vl=voicesFor("tr-TR");if(!vl.length)return reply("Bu telefonda Türkçe ses bulunamadı. Telefon ayarlarında 'Metinden konuşma' bölümüne Türkçe ses ekleyin, sonra tekrar deneyin.");return reply("Türkçe sesler:\n"+vl.map(function(x,k){return (k+1)+". "+x.name}).join("\n")+"\n\nSeçmek için: 'ses 2 seç', denemek için: 'sesi dene'.")}
   var vs=n.match(/^ses (\d+) seç$/);if(vs){var vl2=voicesFor("tr-TR"),pick=vl2[+vs[1]-1];if(!pick)return reply("Böyle bir ses yok. 'ses listesi' ile numaraya bakın.");S.set.voice=S.set.voice||{};S.set.voice["tr-TR"]=pick.name;save();return reply("Ses seçildi: "+pick.name+". Denemek için 'sesi dene' yazın.")}
   if(/^sesi dene$/.test(n)){var was=S.set.speak;S.set.speak=true;save();speak("Merhaba efendim. Ses ayarınızı dinliyorsunuz.");S.set.speak=was;save();return reply("Ses denemesi yapılıyor.")}
@@ -1522,6 +1547,7 @@ function fireDue(){
   var now=Date.now(),due=(S.reminders||[]).filter(function(r){return !r.done&&r.ts<=now});
   if(!due.length)return;
   due.forEach(function(r){r.done=true;var m=r.raw?r.t:"Hatırlatma: "+r.t;add("bot",m);speak(m);try{navigator.vibrate&&navigator.vibrate([300,150,300])}catch(e){}
+    notifyOS(m);
     if(/^Haftalık yedek/.test(r.t))addReminder(r.t,r.ts+7*864e5);
   });
   save();
@@ -1531,6 +1557,22 @@ function ensureBackupReminder(){
   S.reminders=S.reminders||[];
   if(S.reminders.some(function(r){return /^Haftalık yedek/.test(r.t)}))return;
   addReminder("Haftalık yedek: Daha fazla > Yedekle ile verilerinizi indirin.",Date.now()+7*864e5);
+}
+
+/* Bildirim: izin verilmişse ve sayfa arka plandaysa telefonun bildirim çubuğuna yazar (sayfa kapalıyken bu sunucu ister) */
+function notifyOS(m){
+  try{
+    if(!("Notification" in window)||Notification.permission!=="granted")return;
+    if(!document.hidden)return;
+    new Notification("Jarvis",{body:m,tag:"jarvis-"+Date.now()});
+  }catch(e){}
+}
+function askNotify(){
+  if(!("Notification" in window))return "Bu tarayıcı bildirimleri desteklemiyor.";
+  if(Notification.permission==="granted")return "Bildirimler zaten açık.";
+  if(Notification.permission==="denied")return "Bildirimler engellenmiş. Chrome ayarlarından bu siteye bildirim izni verin.";
+  Notification.requestPermission();
+  return "Bildirim izni istendi. İzin verirseniz Jarvis arka plandayken hatırlatmalar bildirim olarak gelir.";
 }
 
 </script>
